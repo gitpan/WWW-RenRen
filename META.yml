@@ -1,22 +1,22 @@
----
-abstract: 'The great new WWW::RenRen!'
+--- #YAML:1.0
+name:               WWW-RenRen
+version:            0.02
+abstract:           ~
 author:
-  - 'Aaron Lewis <the.warl0ck.1989@gmail.com>'
-build_requires:
-  ExtUtils::MakeMaker: 0
+    - Aaron Lewis <the.warl0ck.1989@gmail.com>
+license:            perl
+distribution_type:  module
 configure_requires:
-  ExtUtils::MakeMaker: 0
-dynamic_config: 1
-generated_by: 'ExtUtils::MakeMaker version 6.6302, CPAN::Meta::Converter version 2.120630'
-license: perl
-meta-spec:
-  url: http://module-build.sourceforge.net/META-spec-v1.4.html
-  version: 1.4
-name: WWW-RenRen
-no_index:
-  directory:
-    - t
-    - inc
+    ExtUtils::MakeMaker:  0
+build_requires:
+    ExtUtils::MakeMaker:  0
 requires:
-  Test::More: 0
-version: 0.01
+    Test::More:  0
+no_index:
+    directory:
+        - t
+        - inc
+generated_by:       ExtUtils::MakeMaker version 6.57_05
+meta-spec:
+    url:      http://module-build.sourceforge.net/META-spec-v1.4.html
+    version:  1.4

@@ -8,7 +8,7 @@ use JSON;
 use utf8;
 
 BEGIN {
-	our $VERSION = 0.02;
+	our $VERSION = 0.03;
 }
 
 my $ua = undef;
@@ -57,7 +57,8 @@ sub login
 		'password' => $pw
 	);
 
-	my $json = from_json( post ($loginURL, \%form, { utf8  => 1 } ) );
+	my $loginHTML = post ($loginURL, \%form);
+	my $json = from_json( $loginHTML );
 	if ( $json->{'code'} eq 'true' )
 	{
 		# find rtk & requestToken
@@ -85,12 +86,31 @@ sub login
 	return 0;
 }
 
+sub relieve
+{
+	my (undef, $email, $pw) = @_;
+
+	my %form = (
+		'email' => $email,
+		'password' => $pw,
+		'dominName' => 'renren.com',
+		'changeSubmit' => '解锁帐号'	
+	);
+
+	my $relieveURLPre = 'http://safe.renren.com/relive.do';
+	my $url_relieve= 'http://safe.renren.com/account/relive/verify/';
+
+	get ($relieveURLPre);
+	post ( $url_relieve, \%form );
+}
+
 sub postNewEntry
 {
 	my (undef, $title, $content, $pass, $cate) = @_;
 	my $newEntryPostURL = "http://blog.renren.com/NewEntry.do";
 
 	my %form = (
+		title => $title,
 		body => $content,
 		categoryid => defined $cate ? $cate : 0,
 		blogControl => 99,
@@ -106,13 +126,18 @@ sub postNewEntry
 		jf_vim_em => 'true',
 		blackListChang => 'false',
 		passWord => $pass,
-		title => $title,
 		requestToken => $requestToken,
 		_rtk => $rtk,
 	);
 
-	my $json = from_json( post ($newEntryPostURL, \%form, { utf8  => 1 } ) );
-	($json->{code} eq 0) ? 1 : 0;
+	for (split /\n/, get ($newEntryPostURL))
+	{
+		$form{id} = $1 if $_ =~ /id="id" value="([0-9]+)"/;
+	}
+
+	print post ($newEntryPostURL, \%form);
+#	my $json = from_json( post ($newEntryPostURL, \%form) , { utf8  => 1 } );
+#	($json->{code} eq 0) ? 1 : 0;
 }
 
 sub postUpdatePhoto
@@ -123,11 +148,15 @@ sub postUpdatePhoto
 		id => $albumID,
 		title => "AUTORM",
 		editUploadedPhotos => "false",
-		requestToken => $requestToken,
-		_rtk => $rtk,
+#		x => 99,
+#		y => 32,
+# Another Vulnerability in renren.com:
+#		requestToken => $requestToken,
+#		_rtk => $rtk,
 	);
 
 	my $photoEditURL = 'http://photo.renren.com/photo/' . $userid . '/album-' . $albumID . '/relatives/edit';
+	print "using: ", $photoEditURL;
 	print post ($photoEditURL, \%form);
 }
 
@@ -147,7 +176,7 @@ sub uploadNewPhoto
 	for (@$photoref)
 	{
 		push @photos, "photo" . $i => [ $_ ];
-		last if ++ $id > 5;
+		last if ++ $i > 5;
 	}
 
 	my $request = POST $photoPlainURL, 
@@ -159,6 +188,20 @@ sub uploadNewPhoto
 	{
 		postUpdatePhoto ($albumID);
 
+		return 1;
+	}
+	return 0;
+}
+
+sub deleteAlbum
+{
+	my (undef, $id, $capcha) = @_;
+	my $deleteAlbumURL = 'http://photo.renren.com/photo/' . $userid . '/album-' . $id . '/delete';
+	my %form = ( "photoInfoCode" => $capcha );
+
+	my $json = from_json( post ($deleteAlbumURL, \%form), { utf8  => 1 } );
+	if ( $json->{'code'} eq 0 )
+	{
 		return 1;
 	}
 	return 0;
@@ -176,7 +219,7 @@ sub createAlbum
 		'passwordProtected', defined ($pass) ? 'true' : 'false'
 	);
 
-	my $json = from_json( post ($albumURL, \%form, { utf8  => 1 } ) );
+	my $json = from_json( post ($albumURL, \%form), { utf8  => 1 } );
 	return defined ($json->{'albumid'}) ? $json->{'albumid'} : "";
 }
 
@@ -253,10 +296,56 @@ sub postNewStatus
 		'channel', 'renren'
 	);
 
-	my $json = from_json( post ($postStatusURL, \%form, { utf8  => 1 } ) );
+	my $json = from_json( post ($postStatusURL, \%form), { utf8  => 1 } );
 	if ( $json->{'code'} eq 0 )
 	{
 		# succeed
+		return 1;
+	}
+	return 0;
+}
+
+sub getFriendIDList
+{
+	my $friendListURL = 'http://friend.renren.com/myfriendlistx.do';
+
+	my @list = ();
+	for (split /\r\n/, get ($friendListURL))
+	{
+		if (/var friends=(.*);/)
+		{
+			my $json = from_json($1, { utf8 => 1 } );
+			foreach (@$json)
+			{
+				push @list, $_->{'id'};
+			}
+		}
+	}
+
+	return @list;
+}
+
+sub accessHomePage
+{
+	my (undef, $rrid) = @_;
+	get ( 'http://www.renren.com/' . $rrid . '/profile?ref=opensearch_normal' );
+}
+
+sub delShare
+{
+	my (undef, $sid) = @_;
+	my $delShareURL = 'http://share.renren.com/share/EditShare.do';
+
+	my %form = (
+		'action', 'del',
+		'sid', $sid,
+		'type', $uid,
+		'requestToken', $requestToken,
+		'_rtk', $rtk,
+	);
+
+	if ( post ($delShareURL, \%form) =~ /0/ )
+	{
 		return 1;
 	}
 	return 0;
@@ -287,6 +376,11 @@ __END__
 =head1 Name
 
  WWW::RenRen
+
+=head1 Author
+
+ Aaron Lewis <the.warl0ck.1989@gmail.com> Copyright 2012
+ Release under GPLv3 License
 
 =head1 DESCRIPTION 
 
@@ -324,6 +418,12 @@ __END__
 
  $rr->postNewStatus ('message_will_be_decoded_with_utf8');
 
+=head2 deleteAlbum 
+ 
+ Delete an album, required album ID plus a capcha code:
+
+ $rr->deleteAlbum ('albumid', 'capcha');
+
 =head2 createAlbum
 
  Create a new album, with password protection:
@@ -342,6 +442,12 @@ __END__
 
  $rr->delMyDoing ('doing_id')
 
+=head2 delShare
+
+ Delete a shared item, 
+
+ $rr->delShare ('shareid')
+
 =head2 addThisFriend
 
  Add a friend to your list, user id must be number value
@@ -359,3 +465,21 @@ __END__
  Post a new blog entry, feature under testing
 
  $rr->postNewEntry ('title', 'content', 'password_optional', 'category_id_optional');
+
+=head2 getFriendIDList
+ 
+ Retrieve list of friend ids
+
+ my @list = $rr->getFriendIDList();
+
+=head2 accessHomePage
+
+ Access home page of any user, use opensearch by default:
+
+ $rr->accessHomePage ('123456');
+
+=head2 relieve
+
+ Unlock your renren.com account,
+
+ $rr->relieve ('your renren.com account', 'password');

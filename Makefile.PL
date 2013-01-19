@@ -7,7 +7,7 @@ WriteMakefile(
     NAME                => 'WWW::RenRen',
     AUTHOR              => q{Aaron Lewis <the.warl0ck.1989@gmail.com>},
     VERSION_FROM        => 'lib/WWW/RenRen.pm',
-    ABSTRACT_FROM       => 'lib/WWW/RenRen.pm',
+    ABSTRACT            => 'renren.com funcality helper module',
     ($ExtUtils::MakeMaker::VERSION >= 6.3002
       ? ('LICENSE'=> 'perl')
       : ()),

@@ -10,7 +10,7 @@ use Encode;
 use JSON;
 use utf8;
 
-our $VERSION = 0.25;
+our $VERSION = 0.28;
 
 BEGIN {
     binmode (STDOUT, ':encoding(utf8)');
@@ -88,7 +88,7 @@ if ( $json->{'code'} eq 'true' )
             $self->{requestToken} = $1;
             $self->{rtk} = $2;
         }
-        elsif ( $_ =~ /XN.user.id = '([0-9]+)';/ )
+        elsif ( $_ =~ /'id':'([0-9]+)',/ )
         { 
             $self->{userid} = $1;
             last;
@@ -311,6 +311,22 @@ sub getCommonFriendsList
     return keys %sent;
 }
 
+sub getMyShares
+{
+    my ($self, $userid) = @_;
+    # Another vulnerability of renren.com ;-(
+    my $sharesURL = 'http://share.renren.com/share/' . $self->{userid} . '?__view=async-html';
+
+    my @results = ();
+
+    for (split /</, $self->get ($sharesURL))
+    {
+        push @results, $1 if /id="share_([0-9]+)"/;
+    }
+
+    return \@results;
+}
+
 sub getMyDoings
 {
     my ($self) = @_;
@@ -382,7 +398,7 @@ sub accessHomePage
     $self->get ( 'http://www.renren.com/' . $rrid . '/profile?ref=opensearch_normal' );
 }
 
-sub delShare
+sub delMyShare
 {
     my ($self, $sid) = @_;
     my $delShareURL = 'http://share.renren.com/share/EditShare.do';
@@ -497,11 +513,17 @@ __END__
  my @doingIDs = @{ $rr->getMyDoings };
  $rr->delMyDoing ($_) for @doingIDs;
 
-=head2 delShare
+=head2 getMyShares
+
+ Get an array of share IDs,
+
+ my @shareds = @{ $rr->getMyShares; }
+
+=head2 delMyShare
 
  Delete a shared item, 
 
- $rr->delShare ('shareid')
+ $rr->delMyShare ('shareid')
 
 =head2 addThisFriend
 

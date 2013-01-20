@@ -10,14 +10,14 @@ use Encode;
 use JSON;
 use utf8;
 
+our $VERSION = 0.25;
+
 BEGIN {
-	our $VERSION = 0.10;
-	
     binmode (STDOUT, ':encoding(utf8)');
 }
 
 our %capcha_mapping = (
-	'lockaccount' => 'KILLSELF_'
+    'lockaccount' => 'KILLSELF_'
 );
 
 sub new
@@ -26,18 +26,20 @@ sub new
 
     ####
     my %defaults = (
-        'agent' => 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.11 (KHTML, like Gecko',
+        'agent' => 'Mozilla/5.0 (X11; Linux x86_64) ' 
+        . 'AppleWebKit/537.11 (KHTML, like Gecko',
+
 
     );
     $defaults{$_} = $cnf{$_} for (keys %cnf);
 
     ####
-	my $ua = LWP::UserAgent->new (%defaults);
-	$ua->timeout(3);
-	$ua->cookie_jar (HTTP::Cookies->new);
+    my $ua = LWP::UserAgent->new (%defaults);
+    $ua->timeout(3);
+    $ua->cookie_jar (HTTP::Cookies->new);
     ####
 
-	my $self = bless {
+    my $self = bless {
         'ua' => $ua,
         'userid' => undef,
         'rtk' => undef,
@@ -50,366 +52,369 @@ sub new
 sub get
 {
     my ($self, $url) = @_;
-	my $resp = $self->{ua}->get ($url);
-	$self->{ua}->{cookie_jar}->extract_cookies ($resp);
-	$resp->decoded_content;
+    my $resp = $self->{ua}->get ($url);
+    $self->{ua}->{cookie_jar}->extract_cookies ($resp);
+    $resp->decoded_content;
 }
 
 sub post
 {
-	my ($self, $url, $formRef) = @_;
+    my ($self, $url, $formRef) = @_;
 
-	my $resp = $self->{ua}->post ($url, $formRef);
-	$self->{ua}->{cookie_jar}->extract_cookies ($resp);
-	$resp->decoded_content;
+    my $resp = $self->{ua}->post ($url, $formRef);
+    $self->{ua}->{cookie_jar}->extract_cookies ($resp);
+    $resp->decoded_content;
 }
 
 sub login
 {
-	my ($self, $usr, $pw) = @_;
-	my $loginURL = "http://www.renren.com/ajaxLogin/login";
+    my ($self, $usr, $pw) = @_;
+    my $loginURL = "http://www.renren.com/ajaxLogin/login";
 
-	my %form = (
-		'email' => $usr,
-		'password' => $pw
-	);
+    my %form = (
+        'email' => $usr,
+        'password' => $pw
+    );
 
-	my $loginHTML = $self->post ($loginURL, \%form);
-	my $json = from_json( $loginHTML );
-	if ( $json->{'code'} eq 'true' )
-	{
-		# find rtk & requestToken
-		for (split /\n/ , $self->get($json->{'homeUrl'}))
-		{
-			if ($_ =~ /get_check:'([-0-9]+)',get_check_x:'([a-zA-Z0-9]+)'/)
-			{
-				$self->{requestToken} = $1;
-				$self->{rtk} = $2;
-			}
-			elsif ( $_ =~ /XN.user.id = '([0-9]+)';/ )
-			{ 
-				$self->{userid} = $1;
-				last;
-			}
-		}
+    my $loginHTML = $self->post ($loginURL, \%form);
+my $json = from_json( $loginHTML );
+if ( $json->{'code'} eq 'true' )
+{
+    # find rtk & requestToken
+    for (split /\n/ , $self->get($json->{'homeUrl'}))
+    {
+        if ($_ =~ /get_check:'([-0-9]+)',get_check_x:'([a-zA-Z0-9]+)'/)
+        {
+            $self->{requestToken} = $1;
+            $self->{rtk} = $2;
+        }
+        elsif ( $_ =~ /XN.user.id = '([0-9]+)';/ )
+        { 
+            $self->{userid} = $1;
+            last;
+        }
+    }
 
-		return 1;
-	}
-	else
-	{
-		print 'Unable to login: ', $json->{'failDescription'};
-	}
+    return 1;
+}
+else
+{
+    print 'Unable to login: ', $json->{'failDescription'};
+}
 
-	return 0;
+return 0;
 }
 
 sub geticode
 {
-	my ($self, $reason, $file) = @_;
-	my $capchaURL = 'https://safe.renren.com/icode.renren.com/getcode.do?t=' . $reason . '&rnd=123';
-	open my $fh, '>', $file or die $@;
-	print $fh $self->get ($capchaURL);
-	close $fh;
+    my ($self, $reason, $file) = @_;
+    my $capchaURL = 'https://safe.renren.com/icode.renren.com/getcode.do?t=' . $reason . '&rnd=123';
+    open my $fh, '>', $file or die $@;
+    print $fh $self->get ($capchaURL);
+    close $fh;
 };
 
 sub lockaccount
 {
-	my ($self, $passwd, $pcode) = @_;
-	my %form = (
-		'requestToken', $self->{rtk},
-		'password', $passwd,
-		'checkcode', $pcode
-	);
-	my $url_lockacct = 'https://safe.renren.com/account/del/verify/';
+    my ($self, $passwd, $pcode) = @_;
+    my %form = (
+        'requestToken', $self->{rtk},
+        'password', $passwd,
+        'checkcode', $pcode
+    );
+    my $url_lockacct = 'https://safe.renren.com/account/del/verify/';
 
-	print $self->post ( $url_lockacct, \%form );
+    print $self->post ( $url_lockacct, \%form );
 };
 
 sub relieve
 {
-	my ($self, $email, $pw) = @_;
+    my ($self, $email, $pw) = @_;
 
-	my %form = (
-		'email' => $email,
-		'password' => $pw,
-		'dominName' => 'renren.com',
-		'changeSubmit' => '解锁帐号'	
-	);
+    my %form = (
+        'email' => $email,
+        'password' => $pw,
+        'dominName' => 'renren.com',
+        'changeSubmit' => '解锁帐号'	
+    );
 
-	my $relieveURLPre = 'http://safe.renren.com/relive.do';
-	my $url_relieve= 'http://safe.renren.com/account/relive/verify/';
+    my $relieveURLPre = 'http://safe.renren.com/relive.do';
+    my $url_relieve= 'http://safe.renren.com/account/relive/verify/';
 
-	$self->get ($relieveURLPre);
-	$self->post ( $url_relieve, \%form );
+    $self->get ($relieveURLPre);
+    $self->post ( $url_relieve, \%form );
 }
 
 sub postNewEntry
 {
-	my ($self, $title, $content, $pass, $cate) = @_;
-	my $newEntryPostURL = "http://blog.renren.com/NewEntry.do";
+    my ($self, $title, $content, $pass, $cate) = @_;
+    my $newEntryPostURL = "http://blog.renren.com/NewEntry.do";
 
-	my %form = (
-		title => $title,
-		body => $content,
-		categoryid => defined $cate ? $cate : 0,
-		blogControl => 99,
-		passwordProtedted => 0,
-		editBlogControl => 99,
-		postFormid => -674374642,
-		newLetterId => 0,
-		blog_pic_id => undef,
-		pic_path => undef,
-		id => undef,
-		relative_optype => "saveDraft",
-		isVip => undef,
-		jf_vim_em => 'true',
-		blackListChang => 'false',
-		passWord => $pass,
-		requestToken => $self->{requestToken},
-		_rtk => $self->{rtk},
-	);
+    my %form = (
+        title => $title,
+        body => $content,
+        categoryid => defined $cate ? $cate : 0,
+        blogControl => 99,
+        passwordProtedted => 0,
+        editBlogControl => 99,
+        postFormid => -674374642,
+        newLetterId => 0,
+        blog_pic_id => undef,
+        pic_path => undef,
+        id => undef,
+        relative_optype => "saveDraft",
+        isVip => undef,
+        jf_vim_em => 'true',
+        blackListChang => 'false',
+        passWord => $pass,
+        requestToken => $self->{requestToken},
+        _rtk => $self->{rtk},
+    );
 
-	for (split /\n/, $self->get ($newEntryPostURL))
-	{
-		$form{id} = $1 if $_ =~ /id="id" value="([0-9]+)"/;
-	}
+    for (split /\n/, $self->get ($newEntryPostURL))
+    {
+        $form{id} = $1 if $_ =~ /id="id" value="([0-9]+)"/;
+    }
 
-	print $self->post ($newEntryPostURL, \%form);
+    print $self->post ($newEntryPostURL, \%form);
 #	my $json = from_json( $self->post ($newEntryPostURL, \%form) , { utf8  => 1 } );
 #	($json->{code} eq 0) ? 1 : 0;
 }
 
 sub postUpdatePhoto
 {
-	my ($self, $albumID) = @_;
+    my ($self, $albumID) = @_;
 
-	my %form = (
-		id => $albumID,
-		title => "AUTORM",
-		editUploadedPhotos => "false",
+    my %form = (
+        id => $albumID,
+        title => "AUTORM",
+        editUploadedPhotos => "false",
 #		x => 99,
 #		y => 32,
 # Another Vulnerability in renren.com:
 #		requestToken => $self->{requestToken},
 #		_rtk => $self->{rtk},
-	);
+    );
 
-	my $photoEditURL = 'http://photo.renren.com/editphotolist.do?id=' . $albumID;
-	print "Edit url: ", $photoEditURL;
-	$self->post ($photoEditURL, \%form);
+    my $photoEditURL = 'http://photo.renren.com/editphotolist.do?id=' . $albumID;
+    print "Edit url: ", $photoEditURL;
+    $self->post ($photoEditURL, \%form);
 }
 
 sub uploadNewPhoto
 {
-	my ($self, $albumID, $photoref) = @_;
+    my ($self, $albumID, $photoref) = @_;
 
-	my $photoPlainURL = "http://upload.renren.com/uploadservice.fcgi?pagetype=addPhotoPlain";
-	
-	my $i = 1;
+    my $photoPlainURL = "http://upload.renren.com/uploadservice.fcgi?pagetype=addPhotoPlain";
 
-	my @photos = (
-		id => $albumID
-	);
+    my $i = 1;
 
-	for (@$photoref)
-	{
-		push @photos, "photo" . $i => [ $_ ];
-		last if ++ $i > 5;
-	}
+    my @photos = (
+        id => $albumID
+    );
 
-	my $request = POST $photoPlainURL, 
-		Content_Type => 'multipart/form-data', 
-		Content => \@photos;
+    for (@$photoref)
+    {
+        push @photos, "photo" . $i => [ $_ ];
+        last if ++ $i > 5;
+    }
 
-	my $resp = $self->{ua}->request ($request);
-	if ( $resp->is_success && $resp->decoded_content =~ qq#<script># )
-	{
-		$self->postUpdatePhoto ($albumID);
+    my $request = POST $photoPlainURL, 
+    Content_Type => 'multipart/form-data', 
+    Content => \@photos;
 
-		return 1;
-	}
-	return 0;
+my $resp = $self->{ua}->request ($request);
+if ( $resp->is_success && $resp->decoded_content =~ qq#<script># )
+{
+    $self->postUpdatePhoto ($albumID);
+
+    return 1;
+}
+return 0;
 }
 
 sub deleteAlbum
 {
-	my ($self, $id, $capcha) = @_;
-	my $deleteAlbumURL = 'http://photo.renren.com/photo/' . $self->{userid} . '/album-' . $id . '/delete';
-	my %form = ( "photoInfoCode" => $capcha );
+    my ($self, $id, $capcha) = @_;
+    my $deleteAlbumURL = 'http://photo.renren.com/photo/' . $self->{userid} . '/album-' . $id . '/delete';
+    my %form = ( "photoInfoCode" => $capcha );
 
-	my $json = from_json( $self->post ($deleteAlbumURL, \%form), { utf8  => 1 } );
-	if ( $json->{'code'} eq 0 )
-	{
-		return 1;
-	}
-	return 0;
+    my $json = from_json( $self->post ($deleteAlbumURL, \%form), { utf8  => 1 } );
+if ( $json->{'code'} eq 0 )
+{
+    return 1;
+}
+return 0;
 }
 
 sub createAlbum
 {
-	my ($self, $title, $pass) = @_;
+    my ($self, $title, $pass) = @_;
 
-	my $albumURL = "http://photo.renren.com/ajaxcreatealbum.do";
-	my %form = (
-		'title', $title,
-		'control', 99,
-		'password', $pass,
-		'passwordProtected', defined ($pass) ? 'true' : 'false'
-	);
+    my $albumURL = "http://photo.renren.com/ajaxcreatealbum.do";
+    my %form = (
+        'title', $title,
+        'control', 99,
+        'password', $pass,
+        'passwordProtected', defined ($pass) ? 'true' : 'false'
+    );
 
-	my $json = from_json( $self->post ($albumURL, \%form), { utf8  => 1 } );
-	return defined ($json->{'albumid'}) ? $json->{'albumid'} : "";
+    my $json = from_json( $self->post ($albumURL, \%form), { utf8  => 1 } );
+return defined ($json->{'albumid'}) ? $json->{'albumid'} : "";
 }
 
 sub addThisFriend
 {
-	my ($self, $uid) = @_;
-	
-	my $requestFriendURL = "http://friend.renren.com/ajax_request_friend.do?from=sg_others_profile";
-	my %form = (
-		'id'  =>  $uid,
-		'why' => '',
-		'codeFlag'  =>  '0',
-		'code'  =>  '',
-		'requestToken'  =>  $self->{requestToken},
-		'_rtk'  =>  $self->{rtk}
-	);
+    my ($self, $uid) = @_;
 
-	my $json = from_json( $self->post ($requestFriendURL, \%form), { utf8  => 1 } );
-	if ( defined ($json->{'code'}) )
-	{
-		if ($json->{'code'} != 0)
-		{
-			print "Denied: ", $json->{'message'}, "\n";
-		}
-		return $json->{'code'};
-	}
+    my $requestFriendURL = "http://friend.renren.com/ajax_request_friend.do?from=sg_others_profile";
+    my %form = (
+        'id'  =>  $uid,
+        'why' => '',
+        'codeFlag'  =>  '0',
+        'code'  =>  '',
+        'requestToken'  =>  $self->{requestToken},
+        '_rtk'  =>  $self->{rtk}
+    );
 
-	return 0;
+    my $json = from_json( $self->post ($requestFriendURL, \%form), { utf8  => 1 } );
+if ( defined ($json->{'code'}) )
+{
+    if ($json->{'code'} != 0)
+    {
+        print "Denied: ", $json->{'message'}, "\n";
+    }
+    return $json->{'code'};
+}
+
+return 0;
 }
 
 sub getCommonFriendsList
 {
     my ($self) = @_;
-	my $rcdURL = "http://rcd.renren.com/cwf_nget_home";
-	my %sent = ();
+    my $rcdURL = "http://rcd.renren.com/cwf_nget_home";
+    my %sent = ();
 
-	for (split />/ , $self->get($rcdURL) )
-	{
-		if ( $_ =~ /class="username" data-id="([0-9]+)"/ )
-		{
-			my $uid = $1;
-			unless( defined ($sent{$uid}) )
-			{
-				$sent{$1}++;
-			}
-		}
-	}
+    for (split />/ , $self->get($rcdURL) )
+    {
+        if ( $_ =~ /class="username" data-id="([0-9]+)"/ )
+        {
+            my $uid = $1;
+            unless( defined ($sent{$uid}) )
+            {
+                $sent{$1}++;
+            }
+        }
+    }
 
-	return keys %sent;
+    return keys %sent;
 }
 
-sub getDoings
+sub getMyDoings
 {
     my ($self) = @_;
 
-	my $doingsURL = 'http://www.renren.com/' . $self->{userid} . '#!//status/status?id=' . $self->{userid} . '&from=homeleft';
-	print $self->get ($doingsURL);
+    my $doingsURL = 'http://status.renren.com/status?__view=async-html';
+    my @result = ();
 
-	for (split (/"/, $self->get ($doingsURL)))
-	{
-		if ( $_ =~ /delMyDoing.*([0-9]+)/ )
-		{
-			print $1, "\n";
-		}
-	}
+    # TODO: HTML parse
+    # For the moment only IDs are wanted
+    for my $line (split (/>/, $self->get ($doingsURL)))
+    {
+        my $regex = qq#data-wiki .* id="status-([0-9]+)"#;
+        if ( $line =~ /$regex/ )
+        {
+            push @result, $1;
+#            print "Matched: $1\n";       
+        }
+    }
+
+    return \@result;
 }
 
 sub postNewStatus
 {
-	my ($self, $text) = @_;
-	my $postStatusURL = 'http://shell.renren.com/' . $self->{userid} . '/status';
-	
-	my %form = (
-		'requestToken', $self->{requestToken},
-		'_rtk', $self->{rtk},
-		'hostid', $self->{userid},
-		'content', decode ('utf8', $text),
-		'channel', 'renren'
-	);
+    my ($self, $text) = @_;
+    my $postStatusURL = 'http://shell.renren.com/' . $self->{userid} . '/status';
 
-	my $json = from_json( $self->post ($postStatusURL, \%form), { utf8  => 1 } );
-	if ( $json->{'code'} eq 0 )
-	{
-		# succeed
-		return 1;
-	}
-	return 0;
+    my %form = (
+        'requestToken', $self->{requestToken},
+        '_rtk', $self->{rtk},
+        'hostid', $self->{userid},
+        'content', decode ('utf8', $text),
+        'channel', 'renren'
+    );
+
+    my $json = from_json( $self->post ($postStatusURL, \%form), { utf8  => 1 } );
+if ( $json->{'code'} eq 0 )
+{
+    # succeed
+    return 1;
+}
+return 0;
 }
 
 sub getFriendIDList
 {
     my ($self) = @_;
-	my $friendListURL = 'http://friend.renren.com/myfriendlistx.do';
+    my $friendListURL = 'http://friend.renren.com/myfriendlistx.do';
 
-	my @list = ();
-	for (split /\r\n/, $self->get ($friendListURL))
-	{
-		if (/var friends=(.*);/)
-		{
-			my $json = from_json($1, { utf8 => 1 } );
-			foreach (@$json)
-			{
-				push @list, $_->{'id'};
-			}
-		}
-	}
+    my @list = ();
+    for (split /\r\n/, $self->get ($friendListURL))
+    {
+        if (/var friends=(.*);/)
+        {
+            my $json = from_json($1, { utf8 => 1 } );
+            foreach (@$json)
+            {
+                push @list, $_->{'id'};
+            }
+        }
+    }
 
-	return @list;
+    return @list;
 }
 
 sub accessHomePage
 {
-	my ($self, $rrid) = @_;
-	$self->get ( 'http://www.renren.com/' . $rrid . '/profile?ref=opensearch_normal' );
+    my ($self, $rrid) = @_;
+    $self->get ( 'http://www.renren.com/' . $rrid . '/profile?ref=opensearch_normal' );
 }
 
 sub delShare
 {
-	my ($self, $sid) = @_;
-	my $delShareURL = 'http://share.renren.com/share/EditShare.do';
+    my ($self, $sid) = @_;
+    my $delShareURL = 'http://share.renren.com/share/EditShare.do';
 
-	my %form = (
-		'action', 'del',
-		'sid', $sid,
-		'type', $self->{userid},
-		'requestToken', $self->{requestToken},
-		'_rtk', $self->{rtk},
-	);
+    my %form = (
+        'action', 'del',
+        'sid', $sid,
+        'type', $self->{userid},
+        'requestToken', $self->{requestToken},
+        '_rtk', $self->{rtk},
+    );
 
-	if ( $self->post ($delShareURL, \%form) =~ /0/ )
-	{
-		return 1;
-	}
-	return 0;
+    if ( $self->post ($delShareURL, \%form) =~ /0/ )
+{
+    return 1;
+}
+return 0;
 }
 
 sub delMyDoing
 {
-	my ($self, $id) = @_;
+    my ($self, $id) = @_;
 
-	my $deleteDoingURL = "http://status.renren.com/doing/deleteDoing.do";
-	my %form = (
-		'requestToken', $self->{requestToken},
-		'_rtk', $self->{rtk},
-		'id', $id
-	);
+    my $deleteDoingURL = "http://status.renren.com/doing/deleteDoing.do";
+    my %form = (
+        'requestToken', $self->{requestToken},
+        '_rtk', $self->{rtk},
+        'id', $id
+    );
 
-	if ( $self->post ($deleteDoingURL, \%form) =~ /succ/ )
-	{
-		return 1;
-	}
-	return 0;
+    return 1 if ( $self->post ($deleteDoingURL, \%form) =~ /succ/ );
+    return 0;
 }
 
 1;
@@ -462,7 +467,7 @@ __END__
  $rr->postNewStatus ('message_will_be_decoded_with_utf8');
 
 =head2 deleteAlbum 
- 
+
  Delete an album, required album ID plus a capcha code:
 
  $rr->deleteAlbum ('albumid', 'capcha');
@@ -484,6 +489,13 @@ __END__
  Delete a posted status, 
 
  $rr->delMyDoing ('doing_id')
+
+=head2 getMyDoings
+
+ Retrieve an array of doing IDs, 
+
+ my @doingIDs = @{ $rr->getMyDoings };
+ $rr->delMyDoing ($_) for @doingIDs;
 
 =head2 delShare
 
@@ -510,7 +522,7 @@ __END__
  $rr->postNewEntry ('title', 'content', 'password_optional', 'category_id_optional');
 
 =head2 getFriendIDList
- 
+
  Retrieve list of friend ids
 
  my @list = $rr->getFriendIDList();

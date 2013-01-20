@@ -459,14 +459,14 @@ __END__
 
  use WWW::RenRen;
 
- my $rr = RenRen->new; 
+ my $rr = WWW::RenRen->new; 
  die unless $rr->login ('XX@yy.com', 'your_password'); # or use user id
 
 =head2 new
 
  Create a new object and return,
 
- my $rr = RenRen->new;
+ my $rr = WWW::RenRen->new;
 
 =head2 login
 

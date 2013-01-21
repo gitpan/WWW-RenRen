@@ -573,7 +573,7 @@ __END__
 
  ID -> Content
 
- my %doingIDs = %{ $rr->getMyDoings };
+ my %doings = %{ $rr->getMyDoings };
 
 =head2 delMyDoing
 

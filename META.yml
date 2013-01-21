@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               WWW-RenRen
-version:            0.35
+version:            0.36
 abstract:           renren.com functionality helper module
 author:
     - Aaron Lewis <the.warl0ck.1989@gmail.com>

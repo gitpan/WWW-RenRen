@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               WWW-RenRen
-version:            0.28
+version:            0.35
 abstract:           renren.com functionality helper module
 author:
     - Aaron Lewis <the.warl0ck.1989@gmail.com>
@@ -12,6 +12,8 @@ build_requires:
     ExtUtils::MakeMaker:  0
 requires:
     Test::More:  0
+    LWP::UserAgent: 0
+    HTML::TagParser: 0
 no_index:
     directory:
         - t

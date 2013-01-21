@@ -6,11 +6,12 @@ use warnings;
 use LWP::UserAgent;
 use HTTP::Request::Common;
 use HTTP::Cookies;
+use HTML::TagParser;
 use Encode;
 use JSON;
 use utf8;
 
-our $VERSION = 0.28;
+our $VERSION = 0.35;
 
 BEGIN {
     binmode (STDOUT, ':encoding(utf8)');
@@ -26,8 +27,7 @@ sub new
 
     ####
     my %defaults = (
-        'agent' => 'Mozilla/5.0 (X11; Linux x86_64) ' 
-        . 'AppleWebKit/537.11 (KHTML, like Gecko',
+        'agent' => 'Mozilla/5.0 (X11; Linux x86_64)',
 
 
     );
@@ -77,32 +77,54 @@ sub login
     );
 
     my $loginHTML = $self->post ($loginURL, \%form);
-my $json = from_json( $loginHTML );
-if ( $json->{'code'} eq 'true' )
-{
-    # find rtk & requestToken
-    for (split /\n/ , $self->get($json->{'homeUrl'}))
+    my $json = from_json( $loginHTML );
+    if ( $json->{'code'} eq 'true' )
     {
-        if ($_ =~ /get_check:'([-0-9]+)',get_check_x:'([a-zA-Z0-9]+)'/)
+        # find rtk & requestToken
+        for (split /\n/ , $self->get($json->{'homeUrl'}))
         {
-            $self->{requestToken} = $1;
-            $self->{rtk} = $2;
+            if ($_ =~ /get_check:'([-0-9]+)',get_check_x:'([a-zA-Z0-9]+)'/)
+            {
+                $self->{requestToken} = $1;
+                $self->{rtk} = $2;
+            }
+            elsif ( $_ =~ /'id':'([0-9]+)',/ )
+            { 
+                $self->{userid} = $1;
+                last;
+            }
         }
-        elsif ( $_ =~ /'id':'([0-9]+)',/ )
-        { 
-            $self->{userid} = $1;
-            last;
-        }
+
+        return 1;
+    }
+    else
+    {
+        print 'Unable to login: ', $json->{'failDescription'};
     }
 
-    return 1;
-}
-else
-{
-    print 'Unable to login: ', $json->{'failDescription'};
+    return 0;
 }
 
-return 0;
+sub shareLink
+{
+    my ($self, $link, $url, $title, $comment) = @_;
+
+    my $requestURL = 'http://shell.renren.com/' . $self->{userid} . '/share?1';
+    my %form = (
+        'link'         => $link,
+        'url'          => $url,
+        'hostid'       => $self->{userid},
+        'channel'      => 'renren',
+        'meta'         => '""',
+        'thumbUrl'     => '',
+        'summary'      => '',
+        'type'         => 6,
+        'comment'      => decode ('utf8', $comment),
+        'requestToken' => $self->{requestToken},
+        'rtk'          => $self->{rtk}
+    );
+
+    print $self->post ($requestURL, \%form);
 }
 
 sub geticode
@@ -223,14 +245,35 @@ sub uploadNewPhoto
     Content_Type => 'multipart/form-data', 
     Content => \@photos;
 
-my $resp = $self->{ua}->request ($request);
-if ( $resp->is_success && $resp->decoded_content =~ qq#<script># )
-{
-    $self->postUpdatePhoto ($albumID);
+    my $resp = $self->{ua}->request ($request);
+    if ( $resp->is_success && $resp->decoded_content =~ qq#<script># )
+    {
+        $self->postUpdatePhoto ($albumID);
 
-    return 1;
+        return 1;
+    }
+    return 0;
 }
-return 0;
+
+sub getAlbums
+{
+    my ($self) = @_;
+    my $photourl = 'http://photo.renren.com/photo/' 
+        . $self->{userid} 
+        . '?__view=async-html';
+
+    my $hrefReg = 'http://photo.renren.com/photo/[0-9]+/album-([0-9]+)';
+    my %mapping = ();
+
+    my $parser = HTML::TagParser->new ($self->get ($photourl));
+    for my $e ($parser->getElementsByClassName ('album-title'))
+    {
+        next if $e->tagName ne "a";
+        next if $e->attributes->{href} !~ /$hrefReg/;
+        $mapping{$1} = $e->innerText;
+    }
+
+    return \%mapping;
 }
 
 sub deleteAlbum
@@ -240,11 +283,11 @@ sub deleteAlbum
     my %form = ( "photoInfoCode" => $capcha );
 
     my $json = from_json( $self->post ($deleteAlbumURL, \%form), { utf8  => 1 } );
-if ( $json->{'code'} eq 0 )
-{
-    return 1;
-}
-return 0;
+    if ( $json->{'code'} eq 0 )
+    {
+        return 1;
+    }
+    return 0;
 }
 
 sub createAlbum
@@ -260,7 +303,7 @@ sub createAlbum
     );
 
     my $json = from_json( $self->post ($albumURL, \%form), { utf8  => 1 } );
-return defined ($json->{'albumid'}) ? $json->{'albumid'} : "";
+    return defined ($json->{'albumid'}) ? $json->{'albumid'} : "";
 }
 
 sub addThisFriend
@@ -278,16 +321,16 @@ sub addThisFriend
     );
 
     my $json = from_json( $self->post ($requestFriendURL, \%form), { utf8  => 1 } );
-if ( defined ($json->{'code'}) )
-{
-    if ($json->{'code'} != 0)
+    if ( defined ($json->{'code'}) )
     {
-        print "Denied: ", $json->{'message'}, "\n";
+        if ($json->{'code'} != 0)
+        {
+            print "Denied: ", $json->{'message'}, "\n";
+        }
+        return $json->{'code'};
     }
-    return $json->{'code'};
-}
 
-return 0;
+    return 0;
 }
 
 sub getCommonFriendsList
@@ -332,21 +375,35 @@ sub getMyDoings
     my ($self) = @_;
 
     my $doingsURL = 'http://status.renren.com/status?__view=async-html';
-    my @result = ();
+    my %mapping = ();
 
-    # TODO: HTML parse
-    # For the moment only IDs are wanted
-    for my $line (split (/>/, $self->get ($doingsURL)))
+    my $parser = HTML::TagParser->new ($self->get ($doingsURL));
+    for my $e ($parser->getElementsByTagName ('li'))
     {
-        my $regex = qq#data-wiki .* id="status-([0-9]+)"#;
-        if ( $line =~ /$regex/ )
+        next if ! defined $e->attributes->{id};
+        if ($e->attributes->{id} =~ /status-([0-9]+)/)
         {
-            push @result, $1;
-#            print "Matched: $1\n";       
+            my ($doing_id, $doing_content) = ($1, undef);
+
+            # Find content!
+            my $child = $e->firstChild();
+            while (defined $child)
+            {
+                if ($child->tagName eq "h3")
+                {
+                    # BUGGY, hah?
+                    ($doing_content = $child->innerText) =~ s/^[^:]+//;
+                    last;
+                }
+
+                $child = $child->nextSibling;
+            }
+
+            $mapping{$doing_id} = $doing_content;
         }
     }
 
-    return \@result;
+    return \%mapping;
 }
 
 sub postNewStatus
@@ -363,12 +420,12 @@ sub postNewStatus
     );
 
     my $json = from_json( $self->post ($postStatusURL, \%form), { utf8  => 1 } );
-if ( $json->{'code'} eq 0 )
-{
-    # succeed
-    return 1;
-}
-return 0;
+    if ( $json->{'code'} eq 0 )
+    {
+        # succeed
+        return 1;
+    }
+    return 0;
 }
 
 sub getFriendIDList
@@ -412,10 +469,10 @@ sub delMyShare
     );
 
     if ( $self->post ($delShareURL, \%form) =~ /0/ )
-{
-    return 1;
-}
-return 0;
+    {
+        return 1;
+    }
+    return 0;
 }
 
 sub delMyDoing
@@ -452,8 +509,8 @@ __END__
  popular social website in China
 
  Note from author:
- Everything is transmitted as clear text, note the new password
- encryption algorithm is not implemented yet.
+ Everything is transmitted as clear text, also note the new password
+ encryption algorithm is not implemented yet. Don't rap my door for it.
 
 =head1 SYNOPSIS
 
@@ -470,21 +527,31 @@ __END__
 
 =head2 login
 
- Login can be done with either your mail address or associated jabber ID, 
+ Login could be done with either your email address or associated jabber ID, 
  nothing could be done before login.
 
- $rr->login ('XX@yy.com', 'password');
+ die unless $rr->login ('XX@yy.com', 'password');
+
+ Note that the capcha handler is not implemented yet
 
 =head2 postNewStatus
 
- Post a new status, note: your perl script must be utf8 encoded.
- Optional encoding support coming soon.
+ Post a new status, 
 
  $rr->postNewStatus ('message_will_be_decoded_with_utf8');
 
+=head2 getAlbums
+
+ Get a hash reference of albums,
+
+ ID -> Album name
+
+ my $albums = $rr->getAlbums;
+ print join ("\n", keys %$albums);
+
 =head2 deleteAlbum 
 
- Delete an album, required album ID plus a capcha code:
+ Delete an album, an album ID and a capcha code is required:
 
  $rr->deleteAlbum ('albumid', 'capcha');
 
@@ -494,24 +561,25 @@ __END__
 
  $rr->createAlbum ('album_name', 'password');
 
- Or being open to all:
+ Or open to public:
 
  $rr->createAlbum ('album_name');
 
- If succeed, return value would be the album id of newly created one.
+ On success, a newly assigned album id is returned.
+
+=head2 getMyDoings
+
+ Retrieve a hash reference of doings
+
+ ID -> Content
+
+ my %doingIDs = %{ $rr->getMyDoings };
 
 =head2 delMyDoing
 
  Delete a posted status, 
 
  $rr->delMyDoing ('doing_id')
-
-=head2 getMyDoings
-
- Retrieve an array of doing IDs, 
-
- my @doingIDs = @{ $rr->getMyDoings };
- $rr->delMyDoing ($_) for @doingIDs;
 
 =head2 getMyShares
 
@@ -527,15 +595,15 @@ __END__
 
 =head2 addThisFriend
 
- Add a friend to your list, user id must be number value
+ Add a friend to your list, only number value is accepted,
 
  $rr->addThisFriend ('user_id');
 
 =head2 uploadNewPhoto
 
- Upload photos (at most 5) to a known album,
+ Upload photos (at most 5) to an existing album,
 
- $rr->uploadNewPhoto ('album_id', ['1.png', '2.png']);
+ $rr->uploadNewPhoto ('album_id', ['/path/to/1.png', '/path/to/2.png']);
 
 =head2 postNewEntry
 
@@ -551,9 +619,15 @@ __END__
 
 =head2 accessHomePage
 
- Access home page of any user, use opensearch by default:
+ Access home page of any user, use 'opensearch' by default:
 
  $rr->accessHomePage ('123456');
+
+=head2 shareLink
+
+ Share a link and post a status,
+
+ $rr->shareLink ($link, $url, $title, $comment)
 
 =head2 relieve
 
